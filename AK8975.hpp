@@ -41,6 +41,15 @@ depends: []
 
 #include <atomic>
 
+#ifndef XR_STDIO_PRINTF_COMPAT
+#if __has_include("print.hpp")
+#define XR_STDIO_PRINTF_COMPAT(fmt, ...) LibXR::STDIO::Printf<fmt>(__VA_ARGS__)
+#else
+#define XR_STDIO_PRINTF_COMPAT(fmt, ...) \
+  LibXR::STDIO::Printf(fmt __VA_OPT__(, ) __VA_ARGS__)
+#endif
+#endif
+
 class AK8975 : public LibXR::Application {
  public:
   class OptionalBusLock {
@@ -203,8 +212,8 @@ class AK8975 : public LibXR::Application {
 
   static int CommandFunc(AK8975* ak8975, int argc, char** argv) {
     if (argc == 1) {
-      LibXR::STDIO::Printf("Usage:\r\n");
-      LibXR::STDIO::Printf(
+      XR_STDIO_PRINTF_COMPAT("Usage:\r\n");
+      XR_STDIO_PRINTF_COMPAT(
           "  show [time_ms] [interval_ms] - Print magnetometer data periodically.\r\n");
       return 0;
     }
@@ -215,15 +224,16 @@ class AK8975 : public LibXR::Application {
       interval_ms = std::clamp(interval_ms, 10, 1000);
 
       while (time_ms > 0) {
-        LibXR::STDIO::Printf("AK8975: x=%f y=%f z=%f\r\n", ak8975->mag_data_.x(),
-                             ak8975->mag_data_.y(), ak8975->mag_data_.z());
+        XR_STDIO_PRINTF_COMPAT("AK8975: x=%f y=%f z=%f\r\n",
+                               ak8975->mag_data_.x(), ak8975->mag_data_.y(),
+                               ak8975->mag_data_.z());
         LibXR::Thread::Sleep(interval_ms);
         time_ms -= interval_ms;
       }
       return 0;
     }
 
-    LibXR::STDIO::Printf("Error: Invalid arguments.\r\n");
+    XR_STDIO_PRINTF_COMPAT("Error: Invalid arguments.\r\n");
     return -1;
   }
 
