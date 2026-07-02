@@ -65,7 +65,7 @@ class AK8975 : public LibXR::Application {
          LibXR::Quaternion<float>&& rotation, const char* data_topic_name,
          uint32_t sample_period_ms, size_t task_stack_depth)
       : sample_period_ms_(sample_period_ms),
-        topic_(data_topic_name, sizeof(mag_data_)),
+        topic_(LibXR::Topic::CreateTopic<Eigen::Matrix<float, 3, 1>>(data_topic_name)),
         cs_(hw.template FindOrExit<LibXR::GPIO>({"ak8975_cs"})),
         spi_(hw.template FindOrExit<LibXR::SPI>({"spi_ak8975", "spi2", "SPI2"})),
         spi_mutex_(hw.template Find<LibXR::Mutex>({"spi2_mutex"})),
