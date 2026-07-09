@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: AK8975 magnetometer driver module
+module_description: XRobot Module for AKM AK8975 magnetometer sensor
 constructor_args:
   - rotation:
       w: 1.0
@@ -14,19 +14,15 @@ constructor_args:
   - task_stack_depth: 1024
 template_args: []
 required_hardware:
-  - spi_ak8975/spi2/SPI2
-  - ak8975_cs
-  - spi2_mutex
+  - ak8975_spi
   - ramfs
 depends: []
 === END MANIFEST === */
 // clang-format on
 
 #include "app_framework.hpp"
-#include "gpio.hpp"
 #include "logger.hpp"
 #include "message.hpp"
-#include "mutex.hpp"
 #include "ramfs.hpp"
 #include "spi.hpp"
 #include "thread.hpp"
@@ -43,32 +39,12 @@ depends: []
 
 class AK8975 : public LibXR::Application {
  public:
-  class OptionalBusLock {
-   public:
-    explicit OptionalBusLock(LibXR::Mutex* mutex) : mutex_(mutex) {
-      if (mutex_ != nullptr) {
-        mutex_->Lock();
-      }
-    }
-
-    ~OptionalBusLock() {
-      if (mutex_ != nullptr) {
-        mutex_->Unlock();
-      }
-    }
-
-   private:
-    LibXR::Mutex* mutex_;
-  };
-
   AK8975(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
          LibXR::Quaternion<float>&& rotation, const char* data_topic_name,
          uint32_t sample_period_ms, size_t task_stack_depth)
       : sample_period_ms_(sample_period_ms),
         topic_(LibXR::Topic::CreateTopic<Eigen::Matrix<float, 3, 1>>(data_topic_name)),
-        cs_(hw.template FindOrExit<LibXR::GPIO>({"ak8975_cs"})),
-        spi_(hw.template FindOrExit<LibXR::SPI>({"spi_ak8975", "spi2", "SPI2"})),
-        spi_mutex_(hw.template Find<LibXR::Mutex>({"spi2_mutex"})),
+        spi_(hw.template FindOrExit<LibXR::SPI>({"ak8975_spi"})),
         rotation_(std::move(rotation)),
         op_spi_(sem_spi_),
         cmd_file_(LibXR::RamFS::CreateFile("ak8975", CommandFunc, this)) {
@@ -79,10 +55,6 @@ class AK8975 : public LibXR::Application {
                             .clock_phase = LibXR::SPI::ClockPhase::EDGE_2,
                             .prescaler = LibXR::SPI::Prescaler::DIV_4}) ==
            LibXR::ErrorCode::OK);
-
-    cs_->SetConfig({.direction = LibXR::GPIO::Direction::OUTPUT_PUSH_PULL,
-                    .pull = LibXR::GPIO::Pull::NONE});
-    cs_->Write(true);
 
     chip_id_ = ReadReg(REG_WIA);
     ASSERT(chip_id_ == 0x48);
@@ -112,26 +84,17 @@ class AK8975 : public LibXR::Application {
   static constexpr uint8_t REG_CNTL = 0x0A;
 
   void WriteReg(uint8_t reg, uint8_t value) {
-    OptionalBusLock lock(spi_mutex_);
-    cs_->Write(false);
     spi_->MemWrite(reg, value, op_spi_);
-    cs_->Write(true);
   }
 
   uint8_t ReadReg(uint8_t reg) {
-    OptionalBusLock lock(spi_mutex_);
     uint8_t value = 0;
-    cs_->Write(false);
     spi_->MemRead(reg, {&value, 1}, op_spi_);
-    cs_->Write(true);
     return value;
   }
 
   void ReadRegs(uint8_t reg, uint8_t* data, size_t size) {
-    OptionalBusLock lock(spi_mutex_);
-    cs_->Write(false);
     spi_->MemRead(reg, {data, size}, op_spi_);
-    cs_->Write(true);
   }
 
   void TriggerMeasurement() { WriteReg(REG_CNTL, 0x01); }
@@ -232,9 +195,7 @@ class AK8975 : public LibXR::Application {
   uint8_t chip_id_ = 0;
   Eigen::Matrix<float, 3, 1> mag_data_ = Eigen::Matrix<float, 3, 1>(0.0f, 0.0f, 0.0f);
   LibXR::Topic topic_;
-  LibXR::GPIO* cs_;
   LibXR::SPI* spi_;
-  LibXR::Mutex* spi_mutex_ = nullptr;
   LibXR::Quaternion<float> rotation_;
   bool calibrating_ = false;
   std::atomic<bool> mag_cali_requested_{false};
